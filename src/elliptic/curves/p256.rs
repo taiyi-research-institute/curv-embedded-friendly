@@ -1,12 +1,11 @@
 // NIST P-256 elliptic curve utility functions.
+// p256 v0.9
 
 use std::convert::TryFrom;
 
 use p256::elliptic_curve::group::ff::PrimeField;
 use p256::elliptic_curve::group::prime::PrimeCurveAffine;
-use p256::elliptic_curve::ops::Reduce;
 use p256::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
-use p256::elliptic_curve::Field;
 use p256::{AffinePoint, EncodedPoint, FieldBytes, ProjectivePoint, Scalar};
 
 use generic_array::GenericArray;
@@ -27,7 +26,7 @@ lazy_static::lazy_static! {
         g[0] = 0x04;
         g[1..33].copy_from_slice(&BASE_POINT2_X);
         g[33..].copy_from_slice(&BASE_POINT2_Y);
-        EncodedPoint::from_bytes(g).unwrap()
+        EncodedPoint::from_bytes(&g).unwrap()
     };
 
     static ref BASE_POINT2: Secp256r1Point = Secp256r1Point {
@@ -58,7 +57,7 @@ const GROUP_ORDER_BYTES: [u8; 32] = [
 ];
 
 /// P-256 curve implementation based on [p256] library
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Secp256r1 {}
 
 pub type SK = Scalar;
@@ -66,14 +65,12 @@ pub type PK = AffinePoint;
 
 #[derive(Clone, Debug)]
 pub struct Secp256r1Scalar {
-    #[allow(dead_code)]
     purpose: &'static str,
     fe: zeroize::Zeroizing<SK>,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Secp256r1Point {
-    #[allow(dead_code)]
     purpose: &'static str,
     ge: PK,
 }
@@ -98,9 +95,8 @@ impl ECScalar for Secp256r1Scalar {
         let scalar = loop {
             let mut bytes = FieldBytes::default();
             rng.fill(&mut bytes[..]);
-            let element = Scalar::from_repr(bytes);
-            if bool::from(element.is_some()) {
-                break element.unwrap();
+            if let Some(scalar) = Scalar::from_repr(bytes) {
+                break scalar;
             }
         };
         Secp256r1Scalar {
@@ -112,7 +108,7 @@ impl ECScalar for Secp256r1Scalar {
     fn zero() -> Secp256r1Scalar {
         Secp256r1Scalar {
             purpose: "zero",
-            fe: Scalar::ZERO.into(),
+            fe: Scalar::zero().into(),
         }
     }
 
@@ -129,7 +125,7 @@ impl ECScalar for Secp256r1Scalar {
 
         Secp256r1Scalar {
             purpose: "from_bigint",
-            fe: Scalar::from_be_bytes_reduced(GenericArray::from(n_reduced)).into(),
+            fe: Scalar::from_bytes_reduced(&n_reduced.into()).into(),
         }
     }
 
@@ -144,16 +140,10 @@ impl ECScalar for Secp256r1Scalar {
     fn deserialize(bytes: &[u8]) -> Result<Self, DeserializationError> {
         let bytes = <[u8; 32]>::try_from(bytes).or(Err(DeserializationError))?;
         let bytes = FieldBytes::from(bytes);
-        let scalar = Scalar::from_repr(bytes);
-
-        if bool::from(scalar.is_some()) {
-            Ok(Secp256r1Scalar {
-                purpose: "deserialize",
-                fe: scalar.unwrap().into(),
-            })
-        } else {
-            Err(DeserializationError)
-        }
+        Ok(Secp256r1Scalar {
+            purpose: "deserialize",
+            fe: Scalar::from_repr(bytes).ok_or(DeserializationError)?.into(),
+        })
     }
 
     fn add(&self, other: &Self) -> Secp256r1Scalar {
@@ -263,16 +253,13 @@ impl ECPoint for Secp256r1Point {
             &x_arr.into(),
             &y_arr.into(),
             false,
-        ));
+        ))
+        .ok_or(NotOnCurve)?;
 
-        if bool::from(ge.is_some()) {
-            Ok(Secp256r1Point {
-                purpose: "from_coords",
-                ge: ge.unwrap(),
-            })
-        } else {
-            Err(NotOnCurve)
-        }
+        Ok(Secp256r1Point {
+            purpose: "from_coords",
+            ge,
+        })
     }
 
     fn x_coord(&self) -> Option<BigInt> {
@@ -318,16 +305,10 @@ impl ECPoint for Secp256r1Point {
             })
         } else {
             let encoded = EncodedPoint::from_bytes(bytes).map_err(|_| DeserializationError)?;
-            let affine_point = AffinePoint::from_encoded_point(&encoded);
-
-            if bool::from(affine_point.is_some()) {
-                Ok(Secp256r1Point {
-                    purpose: "deserialize",
-                    ge: affine_point.unwrap(),
-                })
-            } else {
-                Err(DeserializationError)
-            }
+            Ok(Secp256r1Point {
+                purpose: "deserialize",
+                ge: AffinePoint::from_encoded_point(&encoded).ok_or(DeserializationError)?,
+            })
         }
     }
 

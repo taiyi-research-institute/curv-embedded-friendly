@@ -1,5 +1,4 @@
 use digest::Digest;
-use generic_array::GenericArray;
 use hmac::crypto_mac::MacError;
 use hmac::{Hmac, Mac, NewMac};
 use typenum::Unsigned;
@@ -163,14 +162,7 @@ where
     }
 
     fn verify_bigint(self, code: &BigInt) -> Result<(), MacError> {
-        let mut code_array = GenericArray::<u8, <D as digest::FixedOutput>::OutputSize>::default();
-        let code_length = code_array.len();
-        let bytes = code.to_bytes();
-        if bytes.len() > code_length {
-            return Err(MacError);
-        }
-        code_array[code_length - bytes.len()..].copy_from_slice(&bytes);
-        self.verify(&code_array)
+        self.verify(&code.to_bytes())
     }
 }
 

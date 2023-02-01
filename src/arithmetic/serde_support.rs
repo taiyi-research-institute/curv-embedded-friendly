@@ -1,6 +1,6 @@
 use std::fmt;
 
-use serde::de::{Error, SeqAccess, Visitor};
+use serde::de::{SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::traits::Converter;
@@ -12,11 +12,7 @@ impl Serialize for BigInt {
         S: Serializer,
     {
         let bytes = self.to_bytes();
-        if !serializer.is_human_readable() {
-            serializer.serialize_bytes(&bytes)
-        } else {
-            serializer.serialize_str(&hex::encode(bytes))
-        }
+        serializer.serialize_bytes(&bytes)
     }
 }
 
@@ -51,20 +47,8 @@ impl<'de> Deserialize<'de> for BigInt {
                 }
                 Ok(BigInt::from_bytes(&bytes))
             }
-
-            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-            where
-                E: Error,
-            {
-                let bytes = hex::decode(v).map_err(|_| E::custom("malformed hex encoding"))?;
-                Ok(BigInt::from_bytes(&bytes))
-            }
         }
 
-        if !deserializer.is_human_readable() {
-            deserializer.deserialize_bytes(BigintVisitor)
-        } else {
-            deserializer.deserialize_str(BigintVisitor)
-        }
+        deserializer.deserialize_bytes(BigintVisitor)
     }
 }

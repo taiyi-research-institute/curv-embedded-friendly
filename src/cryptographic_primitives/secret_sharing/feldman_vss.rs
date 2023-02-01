@@ -7,18 +7,15 @@
 */
 
 use std::convert::{TryFrom, TryInto};
-use std::num::NonZeroU16;
 use std::{fmt, ops};
 
 use serde::{Deserialize, Serialize};
 
-use crate::cryptographic_primitives::hashing::Digest;
-use crate::cryptographic_primitives::proofs::sigma_dlog::DLogProof;
 use crate::cryptographic_primitives::secret_sharing::Polynomial;
 use crate::elliptic::curves::{Curve, Point, Scalar};
 use crate::ErrorSS::{self, VerifyShareError};
 
-#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct ShamirSecretSharing {
     pub threshold: u16,   //t
     pub share_count: u16, //n
@@ -29,14 +26,11 @@ pub struct ShamirSecretSharing {
 ///
 /// implementation details: The code is using FE and GE. Each party is given an index from 1,..,n and a secret share of type FE.
 /// The index of the party is also the point on the polynomial where we treat this number as u32 but converting it to FE internally.
-///
-/// The scheme is augmented with a dlog proof for the constant commitment to protect against n-t+1 attack
-#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 #[serde(bound = "")]
-pub struct VerifiableSS<E: Curve, H: Digest + Clone> {
+pub struct VerifiableSS<E: Curve> {
     pub parameters: ShamirSecretSharing,
     pub commitments: Vec<Point<E>>,
-    pub proof: DLogProof<E, H>,
 }
 
 /// Shared secret produced by [VerifiableSS::share]
@@ -54,13 +48,13 @@ pub struct SecretShares<E: Curve> {
     polynomial: Polynomial<E>,
 }
 
-impl<E: Curve, H: Digest + Clone> VerifiableSS<E, H> {
+impl<E: Curve> VerifiableSS<E> {
     pub fn reconstruct_limit(&self) -> u16 {
         self.parameters.threshold + 1
     }
 
     // generate VerifiableSS from a secret
-    pub fn share(t: u16, n: u16, secret: &Scalar<E>) -> (VerifiableSS<E, H>, SecretShares<E>) {
+    pub fn share(t: u16, n: u16, secret: &Scalar<E>) -> (VerifiableSS<E>, SecretShares<E>) {
         assert!(t < n);
         let polynomial = Polynomial::<E>::sample_exact_with_fixed_const_term(t, secret.clone());
         let shares = polynomial.evaluate_many_bigint(1..=n).collect();
@@ -71,8 +65,6 @@ impl<E: Curve, H: Digest + Clone> VerifiableSS<E, H> {
             .iter()
             .map(|coef| g * coef)
             .collect::<Vec<_>>();
-
-        let proof = DLogProof::<E, H>::prove(secret);
         (
             VerifiableSS {
                 parameters: ShamirSecretSharing {
@@ -80,14 +72,13 @@ impl<E: Curve, H: Digest + Clone> VerifiableSS<E, H> {
                     share_count: n,
                 },
                 commitments,
-                proof,
             },
             SecretShares { shares, polynomial },
         )
     }
 
     // takes given VSS and generates a new VSS for the same secret and a secret shares vector to match the new commitments
-    pub fn reshare(&self) -> (VerifiableSS<E, H>, Vec<Scalar<E>>) {
+    pub fn reshare(&self) -> (VerifiableSS<E>, Vec<Scalar<E>>) {
         let t = self.parameters.threshold;
         let n = self.parameters.share_count;
 
@@ -106,30 +97,23 @@ impl<E: Curve, H: Digest + Clone> VerifiableSS<E, H> {
             VerifiableSS {
                 parameters: self.parameters.clone(),
                 commitments: new_commitments,
-                proof: self.proof.clone(),
             },
             secret_shares,
         )
     }
 
-    /// generate VerifiableSS from a secret and user defined x values (in case user wants to distribute point f(1), f(4), f(6) and not f(1),f(2),f(3))
-    /// NOTE: The caller should make sure that `t`, `n` and the contents of `index_vec` can't be controlled by a malicious party.
-    pub fn share_at_indices<I>(
+    // generate VerifiableSS from a secret and user defined x values (in case user wants to distribute point f(1), f(4), f(6) and not f(1),f(2),f(3))
+    pub fn share_at_indices(
         t: u16,
         n: u16,
         secret: &Scalar<E>,
-        indicies: I,
-    ) -> (VerifiableSS<E, H>, SecretShares<E>)
-    where
-        I: IntoIterator<Item = NonZeroU16>,
-        I::IntoIter: ExactSizeIterator,
-    {
-        let indicies = indicies.into_iter();
-        assert_eq!(usize::from(n), indicies.len());
+        index_vec: &[u16],
+    ) -> (VerifiableSS<E>, SecretShares<E>) {
+        assert_eq!(usize::from(n), index_vec.len());
 
         let polynomial = Polynomial::<E>::sample_exact_with_fixed_const_term(t, secret.clone());
         let shares = polynomial
-            .evaluate_many_bigint(indicies.map(NonZeroU16::get))
+            .evaluate_many_bigint(index_vec.iter().cloned())
             .collect();
 
         let g = Point::<E>::generator();
@@ -138,8 +122,6 @@ impl<E: Curve, H: Digest + Clone> VerifiableSS<E, H> {
             .iter()
             .map(|coef| g * coef)
             .collect::<Vec<Point<E>>>();
-
-        let proof = DLogProof::<E, H>::prove(secret);
         (
             VerifiableSS {
                 parameters: ShamirSecretSharing {
@@ -147,7 +129,6 @@ impl<E: Curve, H: Digest + Clone> VerifiableSS<E, H> {
                     share_count: n,
                 },
                 commitments,
-                proof,
             },
             SecretShares { shares, polynomial },
         )
@@ -184,7 +165,7 @@ impl<E: Curve, H: Digest + Clone> VerifiableSS<E, H> {
             .iter()
             .map(|i| Scalar::from(*i + 1))
             .collect::<Vec<_>>();
-        VerifiableSS::<E, H>::lagrange_interpolation_at_zero(&points, shares)
+        VerifiableSS::<E>::lagrange_interpolation_at_zero(&points, shares)
     }
 
     // Performs a Lagrange interpolation in field Zp at the origin
@@ -236,9 +217,6 @@ impl<E: Curve, H: Digest + Clone> VerifiableSS<E, H> {
     }
 
     pub fn validate_share(&self, secret_share: &Scalar<E>, index: u16) -> Result<(), ErrorSS> {
-        if self.commitments[0] != self.proof.pk || DLogProof::verify(&self.proof).is_err() {
-            return Err(VerifyShareError);
-        }
         let g = Point::generator();
         let ss_point = g * secret_share;
         self.validate_share_public(&ss_point, index)
@@ -301,19 +279,15 @@ impl<E: Curve> ops::Deref for SecretShares<E> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_for_all_curves_and_hashes;
+    use crate::test_for_all_curves;
 
-    test_for_all_curves_and_hashes!(test_secret_sharing_3_out_of_5_at_indices);
+    test_for_all_curves!(test_secret_sharing_3_out_of_5_at_indices);
 
-    fn test_secret_sharing_3_out_of_5_at_indices<E: Curve, H: Digest + Clone>() {
+    fn test_secret_sharing_3_out_of_5_at_indices<E: Curve>() {
         let secret = Scalar::random();
         let parties = [1, 2, 4, 5, 6];
-        let (vss_scheme, secret_shares) = VerifiableSS::<E, H>::share_at_indices(
-            3,
-            5,
-            &secret,
-            parties.iter().map(|&v| NonZeroU16::new(v).unwrap()),
-        );
+        let (vss_scheme, secret_shares) =
+            VerifiableSS::<E>::share_at_indices(3, 5, &secret, &parties);
 
         let shares_vec = vec![
             secret_shares[0].clone(),
@@ -328,12 +302,12 @@ mod tests {
         assert_eq!(secret, secret_reconstructed);
     }
 
-    test_for_all_curves_and_hashes!(test_secret_sharing_3_out_of_5);
+    test_for_all_curves!(test_secret_sharing_3_out_of_5);
 
-    fn test_secret_sharing_3_out_of_5<E: Curve, H: Digest + Clone>() {
+    fn test_secret_sharing_3_out_of_5<E: Curve>() {
         let secret = Scalar::random();
 
-        let (vss_scheme, secret_shares) = VerifiableSS::<E, H>::share(3, 5, &secret);
+        let (vss_scheme, secret_shares) = VerifiableSS::<E>::share(3, 5, &secret);
 
         let shares_vec = vec![
             secret_shares[0].clone(),
@@ -360,11 +334,11 @@ mod tests {
 
         // test map (t,n) - (t',t')
         let s = &vec![0, 1, 2, 3, 4];
-        let l0 = VerifiableSS::<E, H>::map_share_to_new_params(&vss_scheme.parameters, 0, s);
-        let l1 = VerifiableSS::<E, H>::map_share_to_new_params(&vss_scheme.parameters, 1, s);
-        let l2 = VerifiableSS::<E, H>::map_share_to_new_params(&vss_scheme.parameters, 2, s);
-        let l3 = VerifiableSS::<E, H>::map_share_to_new_params(&vss_scheme.parameters, 3, s);
-        let l4 = VerifiableSS::<E, H>::map_share_to_new_params(&vss_scheme.parameters, 4, s);
+        let l0 = VerifiableSS::<E>::map_share_to_new_params(&vss_scheme.parameters, 0, s);
+        let l1 = VerifiableSS::<E>::map_share_to_new_params(&vss_scheme.parameters, 1, s);
+        let l2 = VerifiableSS::<E>::map_share_to_new_params(&vss_scheme.parameters, 2, s);
+        let l3 = VerifiableSS::<E>::map_share_to_new_params(&vss_scheme.parameters, 3, s);
+        let l4 = VerifiableSS::<E>::map_share_to_new_params(&vss_scheme.parameters, 4, s);
         let w = l0 * &secret_shares[0]
             + l1 * &secret_shares[1]
             + l2 * &secret_shares[2]
@@ -373,12 +347,12 @@ mod tests {
         assert_eq!(w, secret_reconstructed);
     }
 
-    test_for_all_curves_and_hashes!(test_secret_sharing_3_out_of_7);
+    test_for_all_curves!(test_secret_sharing_3_out_of_7);
 
-    fn test_secret_sharing_3_out_of_7<E: Curve, H: Digest + Clone>() {
+    fn test_secret_sharing_3_out_of_7<E: Curve>() {
         let secret = Scalar::random();
 
-        let (vss_scheme, secret_shares) = VerifiableSS::<E, H>::share(3, 7, &secret);
+        let (vss_scheme, secret_shares) = VerifiableSS::<E>::share(3, 7, &secret);
 
         let shares_vec = vec![
             secret_shares[0].clone(),
@@ -399,11 +373,11 @@ mod tests {
 
         // test map (t,n) - (t',t')
         let s = &vec![0, 1, 3, 4, 6];
-        let l0 = VerifiableSS::<E, H>::map_share_to_new_params(&vss_scheme.parameters, 0, s);
-        let l1 = VerifiableSS::<E, H>::map_share_to_new_params(&vss_scheme.parameters, 1, s);
-        let l3 = VerifiableSS::<E, H>::map_share_to_new_params(&vss_scheme.parameters, 3, s);
-        let l4 = VerifiableSS::<E, H>::map_share_to_new_params(&vss_scheme.parameters, 4, s);
-        let l6 = VerifiableSS::<E, H>::map_share_to_new_params(&vss_scheme.parameters, 6, s);
+        let l0 = VerifiableSS::<E>::map_share_to_new_params(&vss_scheme.parameters, 0, s);
+        let l1 = VerifiableSS::<E>::map_share_to_new_params(&vss_scheme.parameters, 1, s);
+        let l3 = VerifiableSS::<E>::map_share_to_new_params(&vss_scheme.parameters, 3, s);
+        let l4 = VerifiableSS::<E>::map_share_to_new_params(&vss_scheme.parameters, 4, s);
+        let l6 = VerifiableSS::<E>::map_share_to_new_params(&vss_scheme.parameters, 6, s);
 
         let w = l0 * &secret_shares[0]
             + l1 * &secret_shares[1]
@@ -413,12 +387,12 @@ mod tests {
         assert_eq!(w, secret_reconstructed);
     }
 
-    test_for_all_curves_and_hashes!(test_secret_sharing_1_out_of_2);
+    test_for_all_curves!(test_secret_sharing_1_out_of_2);
 
-    fn test_secret_sharing_1_out_of_2<E: Curve, H: Digest + Clone>() {
+    fn test_secret_sharing_1_out_of_2<E: Curve>() {
         let secret = Scalar::random();
 
-        let (vss_scheme, secret_shares) = VerifiableSS::<E, H>::share(1, 2, &secret);
+        let (vss_scheme, secret_shares) = VerifiableSS::<E>::share(1, 2, &secret);
 
         let shares_vec = vec![secret_shares[0].clone(), secret_shares[1].clone()];
 
@@ -434,23 +408,23 @@ mod tests {
 
         // test map (t,n) - (t',t')
         let s = &vec![0, 1];
-        let l0 = VerifiableSS::<E, H>::map_share_to_new_params(&vss_scheme.parameters, 0, s);
-        let l1 = VerifiableSS::<E, H>::map_share_to_new_params(&vss_scheme.parameters, 1, s);
+        let l0 = VerifiableSS::<E>::map_share_to_new_params(&vss_scheme.parameters, 0, s);
+        let l1 = VerifiableSS::<E>::map_share_to_new_params(&vss_scheme.parameters, 1, s);
         let w = l0 * &secret_shares[0] + l1 * &secret_shares[1];
         assert_eq!(w, secret_reconstructed);
     }
 
-    test_for_all_curves_and_hashes!(test_secret_sharing_1_out_of_3);
+    test_for_all_curves!(test_secret_sharing_1_out_of_3);
 
-    fn test_secret_sharing_1_out_of_3<E: Curve, H: Digest + Clone>() {
+    fn test_secret_sharing_1_out_of_3<E: Curve>() {
         let secret = Scalar::random();
 
-        let (vss_scheme, secret_shares) = VerifiableSS::<E, H>::share(1, 3, &secret);
+        let (vss_scheme, secret_shares) = VerifiableSS::<E>::share(1, 3, &secret);
 
         let shares_vec = vec![secret_shares[0].clone(), secret_shares[1].clone()];
 
         // test commitment to point and sum of commitments
-        let (vss_scheme2, secret_shares2) = VerifiableSS::<E, H>::share(1, 3, &secret);
+        let (vss_scheme2, secret_shares2) = VerifiableSS::<E>::share(1, 3, &secret);
         let sum = &secret_shares[0] + &secret_shares2[0];
         let point_comm1 = vss_scheme.get_point_commitment(1);
         let point_comm2 = vss_scheme.get_point_commitment(2);
@@ -474,19 +448,19 @@ mod tests {
 
         // test map (t,n) - (t',t')
         let s = &vec![0, 2];
-        let l0 = VerifiableSS::<E, H>::map_share_to_new_params(&vss_scheme.parameters, 0, s);
-        let l2 = VerifiableSS::<E, H>::map_share_to_new_params(&vss_scheme.parameters, 2, s);
+        let l0 = VerifiableSS::<E>::map_share_to_new_params(&vss_scheme.parameters, 0, s);
+        let l2 = VerifiableSS::<E>::map_share_to_new_params(&vss_scheme.parameters, 2, s);
 
         let w = l0 * &secret_shares[0] + l2 * &secret_shares[2];
         assert_eq!(w, secret_reconstructed);
     }
 
-    test_for_all_curves_and_hashes!(test_secret_resharing);
+    test_for_all_curves!(test_secret_resharing);
 
-    fn test_secret_resharing<E: Curve, H: Digest + Clone>() {
+    fn test_secret_resharing<E: Curve>() {
         let secret = Scalar::random();
 
-        let (vss_scheme, secret_shares) = VerifiableSS::<E, H>::share(1, 3, &secret);
+        let (vss_scheme, secret_shares) = VerifiableSS::<E>::share(1, 3, &secret);
         let (new_vss_scheme, zero_secret_shares) = vss_scheme.reshare();
 
         let new_share_party_1 = &secret_shares[0] + &zero_secret_shares[0];

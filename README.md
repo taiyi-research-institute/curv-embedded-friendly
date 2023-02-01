@@ -6,6 +6,14 @@
 
 Curv
 =====================================
+### Changes
+
+Feb 1, 2023
+
+The dependency of `secp256k1` crate (<https://crates.io/crates/secp256k1>) was replaced with `k256` crate (<https://crates.io/crates/k256>) to be embedded-friendly. Though this repo is forked from `curv-kzen` v0.9.0, the updated `secp256_k1.rs` also works well with `curv-kzen` v0.10.0.
+
+### Intro
+
 Curv contains an extremely simple interface to onboard new elliptic curves. 
 Use this library for general purpose elliptic curve cryptography. 
 
@@ -30,7 +38,7 @@ use curv::elliptic::curves::*;
 
 |        Curve         |   low level library    |    curve description       |     
 |-------------------------------|------------------------|------------------------|
-|    **Secp256k1**    |        [rust-secp256k1](https://github.com/rust-bitcoin/rust-secp256k1)            |      [bitcoin wiki](https://en.bitcoin.it/wiki/Secp256k1)           |     
+|    **Secp256k1**    |        [RustCrypto](https://crates.io/crates/k256)            |      [bitcoin wiki](https://en.bitcoin.it/wiki/Secp256k1)           |     
 |    **P-256**    |        [RustCrypto](https://crates.io/crates/p256)            |      [NIST.FIPS.186.4](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.186-4.pdf)           |     
 |    **Ed25519**    |        [cryptoxide](https://github.com/typed-io/cryptoxide/blob/master/src/curve25519.rs)            |      [BDLSY11](https://ed25519.cr.yp.to/ed25519-20110926.pdf)           |      
 |    **Ristretto**    |        [curve25519-dalek](https://github.com/dalek-cryptography/curve25519-dalek)            |     [ristretto group](https://ristretto.group/)           |      
@@ -60,7 +68,7 @@ You can choose any one which you prefer by specifying a feature:
 * **num-bigint**, Rust's pure implementation of big integer. In order to use it, put in Cargo.toml:
   ```toml
   [dependencies.curv-kzen]
-  version = "0.8"
+  version = "0.9"
   default-features = false
   features = ["num-bigint"]
   ```
@@ -85,5 +93,4 @@ Curv is released under the terms of the MIT license. See [LICENSE](LICENSE) for 
 
 
 ### Development Process & Contact
-This library is maintained by ZenGo-X. Contributions are highly welcomed! Besides GitHub issues and PRs, feel free to [reach out](mailto:github@kzencorp.com) by mail or join ZenGo X [Telegram](https://t.me/joinchat/ET1mddGXRoyCxZ-7) for discussions on code and research. 
-
+This library is maintained by ZenGo-X. Contributions are highly welcomed! Besides GitHub issues and PRs, feel free to [reach out](mailto:github@kzencorp.com) by mail or join ZenGo X [Telegram](https://t.me/joinchat/ET1mddGXRoyCxZ-7) for discussions on code and research.

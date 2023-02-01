@@ -9,7 +9,7 @@ use crate::elliptic::curves::Point;
 /// Bilinear pairing function
 ///
 /// _Note_: pairing function support is experimental and subject to change
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Pair {
     pub e: Fq12,
 }

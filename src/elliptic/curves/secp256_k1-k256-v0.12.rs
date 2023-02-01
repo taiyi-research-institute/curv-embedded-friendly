@@ -1,5 +1,4 @@
 #![allow(non_snake_case)]
-// downgrade k256 crate from v0.11 to 0.9.6
 // replace secp256k1 crate by k256 crate
 /*
     This file is part of Curv library
@@ -130,7 +129,7 @@ impl ECScalar for Secp256k1Scalar {
     fn zero() -> Secp256k1Scalar {
         Secp256k1Scalar {
             purpose: "zero",
-            fe: Scalar::zero().into(),
+            fe: Scalar::ZERO.into(),
         }
     }
 

@@ -4,7 +4,6 @@ use std::{error, fmt};
 #[derive(Debug)]
 pub struct ParseBigIntError {
     pub(super) reason: ParseErrorReason,
-    #[allow(dead_code)]
     pub(super) radix: u32,
 }
 
