@@ -167,8 +167,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e35f15e1a0699dd988fed910dd78fdc6407f44654cd12589c91fa44ea67d9159"
 
 [[package]]
-name = "curv-kzen"
-version = "0.9.0"
+name = "curv-embedded"
+version = "0.1.0"
 dependencies = [
  "blake2",
  "cryptoxide",
